@@ -2,6 +2,10 @@
 
 Create and manage AWS resources in cloudformation
 
+# How to create an Ivy environment
+
+Go [here](https://github.com/nxtlytics/ivy-documentation/blob/master/howto/Processes/Creating_new_AWS_GovCloud_accounts.md#setup-ivy-environment-works-on-commercial-and-govcloud-aws)
+
 ## Notes
 
 ### Cloudformation does not let you permanently `SuspendProcesses`
