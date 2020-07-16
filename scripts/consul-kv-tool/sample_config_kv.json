@@ -1,0 +1,10 @@
+[
+    {
+        "CreateIndex": 634934,
+        "Flags": 0,
+        "Key": "config/infrastructure/docker_config",
+        "LockIndex": 0,
+        "ModifyIndex": 634953,
+        "Value": "{\"auths\":{\"docker.fqdn\":{\"auth\":\"<REDACTED>\"}},\"HttpHeaders\":{\"User-Agent\":\"Docker-Client/18.09.9-ce (linux)\"}}"
+    }
+]

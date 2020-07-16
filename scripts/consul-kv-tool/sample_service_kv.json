@@ -1,0 +1,10 @@
+[
+    {
+        "CreateIndex": 102320,
+        "Flags": 0,
+        "Key": "service/example/private",
+        "LockIndex": 0,
+        "ModifyIndex": 102320,
+        "Value": "example.service.<sysenv shortname>.<tld>"
+    }
+]

@@ -1,0 +1,10 @@
+[
+    {
+        "CreateIndex": 17263,
+        "Flags": 0,
+        "Key": "proxy/default_domain",
+        "LockIndex": 0,
+        "ModifyIndex": 102353,
+        "Value": ".service.<sysenv shortname>.<tld>"
+    }
+]

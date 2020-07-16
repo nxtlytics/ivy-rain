@@ -1,0 +1,5 @@
+boto3
+json_tools
+troposphere==2.4.5
+awacs==0.9.6
+netaddr
