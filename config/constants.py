@@ -12,7 +12,7 @@ ROOT_ROUTE53_ZONE = 'nxtlytics.dev'
 
 ENVIRONMENTS = {
     #
-    # dev
+    # appdev
     # Commercial development account for application code
     #
     'appdev': {
