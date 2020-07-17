@@ -3,7 +3,7 @@ TAG = 'ivy'
 TEAMS = {
     'infrastructure': {
         'name': 'Infrastructure',
-        'email': 'nfeng@nxtlytics.com'
+        'email': 'infeng@nxtlytics.com'
     }
 }
 
@@ -12,11 +12,11 @@ ROOT_ROUTE53_ZONE = 'nxtlytics.dev'
 
 ENVIRONMENTS = {
     #
-    # appdev
+    # dev
     # Commercial development account for application code
     #
     'appdev': {
-        'sysenv': 'ivy-aws-us-west-2-app-dev',
+        'sysenv': 'ivy-aws-app-dev',
         'region': 'us-west-2',
         'prompt_color': 'green',
         'route53_zone': 'dev.nxtlytics.dev.',
@@ -156,7 +156,7 @@ ENVIRONMENTS = {
     # Transit account/VPC for peering all Commercial accounts
     #
     'transit': {
-        'sysenv': 'ivy-aws-us-west-2-transit-prod',
+        'sysenv': 'ivy-aws-transit-prod',
         'region': 'us-west-2',
         'prompt_color': 'red',
         'route53_zone': 'transit.nxtlytics.dev.',
