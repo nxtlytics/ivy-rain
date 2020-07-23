@@ -98,7 +98,7 @@ class RDSTemplate(IvyTemplate):
                 )
             )
 
-            if self.get_partition() is 'aws': # aws-us-gov and aws-cn may not have route53 public zones
+            if self.get_partition() == 'aws': # aws-us-gov and aws-cn may not have route53 public zones
                 hosted_zone = constants.ENVIRONMENTS[self.env]['route53_zone']
                 self.add_resource(
                     route53.RecordSetGroup(
