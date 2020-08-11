@@ -188,8 +188,15 @@ class MesosAgentsTemplate(IvyTemplate):
             LoadBalancerArn=Ref(_alb),
             DefaultActions=[
                 elasticloadbalancingv2.Action(
-                    Type='forward',
-                    TargetGroupArn=Ref(_target_group)
+                    Type='redirect',
+                    RedirectConfig=elasticloadbalancingv2.RedirectConfig(
+                        Host='#{host}',
+                        Path='/#{path}',
+                        Port='443',
+                        Protocol='HTTPS',
+                        Query='#{query}',
+                        StatusCode='HTTP_301'
+                    )
                 )
             ],
         ))
