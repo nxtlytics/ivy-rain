@@ -111,11 +111,10 @@ function setup_vault_member() {
     echo -n 'Checking the cluster members to see if I am allowed to bootstrap: '
     # Check if my instance id exists in the list
     echo "${HOSTS_ENTRIES}"
-    echo "${HOSTS_ENTRIES}" | grep "${ENI_IP}"
     HOSTS_IPS=( $(awk '{ print $1 }' <<< "${HOSTS_ENTRIES}") )
+    echo "${HOSTS_ENTRIES}" | grep "${ENI_IP}"
     I_CAN_BOOTSTRAP=$?  # Check exit status of grep command
     if [ $I_CAN_BOOTSTRAP -eq 0 ]; then
-      # TODO: We may need to rather interrogate Vault for this bit to make sure the Lambda publishes only nodes added to vault(and ourselves) 2 nodes coming up at the same time race condition
       UNHEALTHY_COUNT=0
       # Check each node in the cluster is okay (Except myself)
       for i in "${HOSTS_IPS[@]}"; do
