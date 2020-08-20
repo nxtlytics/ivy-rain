@@ -75,6 +75,15 @@ EOF
 
 function setup_datadog() {
     mv /etc/datadog-agent/conf.d/kafka.d/conf.yaml.example /etc/datadog-agent/conf.d/kafka.d/conf.yaml
+    cat <<EOF > /etc/datadog-agent/conf.d/kafka_consumer.d/conf.yaml
+init_config:
+
+instances:
+  - kafka_connect_str:
+    - localhost:9092
+    monitor_unlisted_consumer_groups: true
+EOF
+
     service datadog-agent restart
 }
 
