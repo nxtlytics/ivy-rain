@@ -22,4 +22,4 @@ Here you will find scripts to setup the necessary secrets/certificates for stand
 
 - [Digital Ocean's Vault and Kubernetes](https://www.digitalocean.com/blog/vault-and-kubernetes)
 - [Vault's Build Your Own Certificate Authority (CA)](https://learn.hashicorp.com/vault/secrets-management/sm-pki-engine)
-- 
+- [Be your own certificate authority](https://opensource.com/article/19/4/certificate-authority)
