@@ -141,7 +141,7 @@ def is_parameter_in_a_region(
                 Name=parameter_name,
                 WithDecryption=True
             )
-            log.info("Parameter %s is present in ssm at region %s", parameter_name, region)
+            log.debug("Parameter %s is present in ssm at region %s", parameter_name, region)
             exists.append(True)
         except Exception as e:
             log.debug("Parameter %s is not present in ssm at region %s, error was: %s", parameter_name, region, e)
@@ -189,9 +189,7 @@ def main(
     ca_key = ca_dir / 'ca-key.pem'
     ca_key_name_in_ssm = '/' + ivy_tag + '/' + sysenv + '/' + 'CA' + '/' + 'ca-key.pem'
     ca_crt_name_in_ssm = '/' + ivy_tag + '/' + sysenv + '/' + 'CA' + '/' + 'ca.pem'
-    ca_key_exists = is_parameter_in_a_region(ca_key_name_in_ssm)
-    log.info("Does %s exist in ssm? %s", ca_key_name_in_ssm, ca_key_exists)
-    if ca_key_exists:
+    if is_parameter_in_a_region(ca_key_name_in_ssm):
         log.info("%s already exists in ssm", ca_key_name_in_ssm)
     else:
         log.info("%s does not exist in ssm", ca_key_name_in_ssm)
