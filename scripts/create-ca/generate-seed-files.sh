@@ -2,28 +2,39 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-SYSENV_SHORT_NAME="${1}"
-IVY_TAG="${2:-ivy}"
-BASE_DIRECTORY="${3:-.}"
-SYSENV_DIRECTORY="${BASE_DIRECTORY}/${SYSENV_SHORT_NAME}"
-export AWS_PROFILE="${4:-default}"
-AWS_REGION="$(aws configure get region --profile=${AWS_PROFILE})"
-export AWS_DEFAULT_REGION="${5:-${AWS_REGION}}"
+THIS_SCRIPT=$(basename $0)
+PADDING=$(printf %-${#THIS_SCRIPT}s " ")
 
-# Default to 10 years
-VALID_IN_YEARS="${6:-10}"
-DAYS_IN_YEAR='365'
-HOURS_IN_DAY='24'
-HOURS_IN_YEAR='8760'
+function usage () {
+  echo "Usage:"
+  echo "${THIS_SCRIPT} -s <REQUIRED: SysEnv Short Name> -t <Ivy tag also known as namespace>"
+  echo "${PADDING} -b <Base directory where to store seed files>"
+  echo "${PADDING} -e <Validity of Certificate Authority (CA) keys in years, if files already exist this will be ignored>"
+  echo
+  echo 'Setup Ivy seed files (Right now only Certificate Authority, privat key and public key)'
+  exit 1
+}
 
-let "VALID_IN_HOURS = ${VALID_IN_YEARS} * ${HOURS_IN_YEAR}"
+function is_parameter_in_ssm() {
+  local PARAMETER="${1}"
+  local REGIONS_IN_SSM=( $(aws ssm get-parameters-by-path --path '/aws/service/global-infrastructure/services/ssm/regions' --query 'Parameters[*].Value' --output='text') )
+  for region in "${REGIONS_IN_SSM[@]}"; do
+    if aws --region="${region}" ssm get-parameter --name "${PARAMETER}" &> /dev/null; then
+        echo "Parameter ${PARAMETER} already exists in region ${region}" >&2
+        return 0
+    fi
+  done
+  echo "Parameter ${PARAMETER} does not exist in any region where ssm is available" >&2
+  return 1
+}
 
+function generate_certificate_authority() {
+  local CA_DIRECTORY="${1}"
+  local VALID_IN_HOURS="${2}"
+  local SYSENV_SHORT_NAME="${3}"
+  cd "${CA_DIRECTORY}"
 
-CA_DIRECTORY="${SYSENV_DIRECTORY}/CA"
-mkdir -p "${CA_DIRECTORY}"
-cd "${CA_DIRECTORY}"
-
-cat > ca-config.json <<EOF
+  cat > ca-config.json <<EOF
 {
   "signing": {
     "default": {
@@ -39,11 +50,7 @@ cat > ca-config.json <<EOF
 }
 EOF
 
-COUNTRY="${7:-US}"
-CITY="${8:-Austin}"
-STATE="${9:-Texas}"
-
-cat > ca-csr.json <<EOF
+  cat > ca-csr.json <<EOF
 {
   "CN": "${SYSENV_SHORT_NAME}",
   "key": {
@@ -52,150 +59,79 @@ cat > ca-csr.json <<EOF
   },
   "names": [
     {
-      "C": "${COUNTRY}",
-      "L": "${CITY}",
       "O": "${SYSENV_SHORT_NAME}",
-      "OU": "CA",
-      "ST": "${STATE}"
+      "OU": "CA"
     }
   ]
 }
 EOF
 
-cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+  cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+  cd -
 
-CA_KEY_FILE="${CA_DIRECTORY}/ca-key.pem"
-CA_CERTIFICATE_FILE="${CA_DIRECTORY}/ca.pem"
-
-aws ssm put-parameter \
-  --name "/main/${SYSENV_SHORT_NAME}/CA_key" \
-  --type SecureString \
-  --value "$(cat ${CA_KEY_FILE})"
-
-
-aws ssm put-parameter \
-  --name "/main/${SYSENV_SHORT_NAME}/CA_certificate" \
-  --type SecureString \
-  --value "$(cat ${CA_CERTIFICATE_FILE})"
-
-# going back to default dir
-cd -
-
-CLUSTER_NAME="${1}"
-
-# Creating the certificate Authorities (CAs)
-# mounts new pki backends to cluster-unique paths and generates a 10 year root certificate for each pki backend
-# What is the value of COMPONENT?
-#vault mount -path ${CLUSTER_NAME}/pki/${COMPONENT} pki
-#vault mount-tune -max-lease-ttl=87600h ${CLUSTER_NAME}/pki/etcd
-vault write ${CLUSTER_NAME}/pki/${COMPONENT}/root/generate/internal common_name=${CLUSTER_NAME}/pki/${COMPONENT} ttl=87600h
-
-# In Kubernetes, it is possible to use the Common Name (CN) field of client certificates as their user name.
-# We leveraged this by creating different roles for each set of CN certificate requests
-# The role below, under the cluster's etcd CA, can create a 30 day cert for any CN.
-vault write ${CLUSTER_NAME}/pki/etcd/roles/member allow_any_name=true max_ttl="720h"
-
-# The role below, under the Kubernetes CA, can only create a certificate with the CN of "kubelet".
-# We can create roles that are limited to individual CNs, such as "kube-proxy" or "kube-scheduler",
-# for each component that we want to communicate with the kube-apiserver.
-vault write ${CLUSTER_NAME}/pki/k8s/roles/kubelet allowed_domains="kubelet" allow_bare_domains=true \
-  allow_subdomains=false max_ttl="720h"
-
-# Because we configure our kube-apiserver in a high availability configuration, separate from the kube-controller-manager,
-# we also generated a shared secret for those components to use with the `--service-account-private-key-file`
-# flag and write it to the generic secrets backend:
-openssl genrsa 4096 > token-key
-vault write secret/${CLUSTER_NAME}/k8s/token key=@token-key
-rm token-key
-
-# Policies for etcd members and kubernetes masters
-cat <<EOT | vault policy-write ${CLUSTER_NAME}/pki/etcd/member -
-path "${CLUSTER_NAME}/pki/etcd/issue/member" {
-  capabilities = ["create", "update"]
-}
-EOT
-
-cat <<EOT | vault policy-write ${CLUSTER_NAME}/pki/k8s/kube-apiserver -
-
-path "${CLUSTER_NAME}/pki/k8s/issue/kube-apiserver" {
-  capabilities = ["create", "update"]
+  CA_KEY_FILE="${CA_DIRECTORY}/ca-key.pem"
+  CA_CERTIFICATE_FILE="${CA_DIRECTORY}/ca.pem"
+  echo "CA_KEY_FILE is at ${CA_KEY_FILE} and CA_CERTIFICATE_FILE is at ${CA_CERTIFICATE_FILE}"
 }
 
-path "secret/${CLUSTER_NAME}/k8s/token" {
-  capabilities = ["read"]
-}
-EOT
+# Ensure dependencies are present
+if [[ ! -x $(command -v cfssl) || ! -x $(command -v cfssljson) || ! -x $(command -v aws) ]]; then
+  echo "[-] Dependencies unmet.  Please verify that the following are installed and in the PATH: cfssl, cfssljson, awscli" >&2
+  exit 1
+fi
 
-`may need to add kubelet policies`
+while getopts ":s:t:b:e:" opt; do
+  case ${opt} in
+    s)
+      SYSENV_SHORT_NAME="${OPTARG}" ;;
+    t)
+      IVY_TAG="${OPTARG}" ;;
+    b)
+      BASE_DIRECTORY="${OPTARG}" ;;
+    e)
+      VALID_IN_YEARS="${OPTARG}" ;;
+    \?)
+      usage ;;
+    :)
+      usage ;;
+  esac
+done
+
+if [[ -z ${SYSENV_SHORT_NAME:-""} ]]; then
+  usage
+fi
+
+IVY_TAG="${IVY_TAG:-ivy}"
+BASE_DIRECTORY="${BASE_DIRECTORY:-.}"
+SSM_PREFIX="${IVY_TAG}/${SYSENV_SHORT_NAME}"
+SYSENV_DIRECTORY="${BASE_DIRECTORY}/${SSM_PREFIX}"
+
+# Default to 10 years
+VALID_IN_YEARS="${VALID_IN_YEARS:-10}"
+DAYS_IN_YEAR='365'
+HOURS_IN_DAY='24'
+HOURS_IN_YEAR='8760'
+
+let "VALID_IN_HOURS = ${VALID_IN_YEARS} * ${HOURS_IN_YEAR}"
+
+CA_DIRECTORY="${SYSENV_DIRECTORY}/CA"
+CA_KEY_SSM="/${SSM_PREFIX}/CA/ca-key.pem"
+CA_CERTIFICATE_SSM="/${SSM_PREFIX}/CA/ca.pem"
+if is_parameter_in_ssm "${CA_KEY_SSM}"; then
+  echo 'Nothing to do here'
+else
+  echo "I will create directories ${CA_DIRECTORY}, CA key and certificate and push them to ssm"
+  mkdir -p "${CA_DIRECTORY}"
+  generate_certificate_authority "${CA_DIRECTORY}" "${VALID_IN_HOURS}" "${SYSENV_SHORT_NAME}"
+
+  aws ssm put-parameter \
+    --name "${CA_KEY_SSM}" \
+    --type SecureString \
+    --value "$(cat ${CA_KEY_FILE})"
 
 
-# Getting certificates
-
-`Create iam roles here`
-
-# We may want to create 1 role for kubernetes masters and another for kubernetes workers
-vault write auth/aws/role/k8s-${CLUSTER_NAME} auth_type=iam \
-  bound_iam_principal_arn=${VAULT_CLIENT_ROLE} \
-  policies="${CLUSTER_NAME}/pki/etcd/member,${CLUSTER_NAME}/pki/k8s/kube-apiserver..." \
-  ttl=720h
-
-#vault write auth/token/roles/k8s-${CLUSTER_NAME} period="720h" orphan=true \
-#  allowed_policies="${CLUSTER_NAME}/pki/etcd/member,${CLUSTER_NAME}/pki/k8s/kube-apiserver..."
-#vault token-create -policy="${CLUSTER_NAME}/pki/etcd/member" -role="k8s-${CLUSTER_NAME}"
-
-# Consul template should be in AMI
-
-cat <<EOF > /path/to/consul-template/configs
-{
-
-  "template": {
-    "source": "/opt/consul-template/templates/cert.template",
-    "destination": "/opt/certs/etcd.serial",
-    "command": "systemctl reload etcd"
-  },
-
-  "vault": {
-    "address": "VAULT_ADDRESS",
-    "token": "VAULT_TOKEN",
-    "renew": true
-  }
-
-}
-EOF
-
-## certdump.go https://gist.github.com/tam7t/1b45125ae4de13b3fc6fd0455954c08e
-
-cat <<EOF > /path/to/consul-template/plugins/certdump/configs
-{{ with secret "${CLUSTER_NAME}/pki/data/issue/member" "common_name=${FQDN}"}}
-
-{{ .Data.serial_number }}
-
-{{ .Data.certificate | plugin "certdump" "/opt/certs/etcd-cert.pem" "etcd"}}
-
-{{ .Data.private_key | plugin "certdump" "/opt/certs/etcd-key.pem" "etcd"}}
-
-{{ .Data.issuing_ca | plugin "certdump" "/opt/certs/etcd-ca.pem" "etcd"}}
-
-{{ end }}
-EOF
-
-# etcd systemd unit should use the flags below:
-
-## --peer-cert-file=/opt/certs/etcd-cert.pem
-## --peer-key-file=/opt/certs/etcd-key.pem
-## --peer-trusted-ca-file=/opt/certs/etcd-ca.pem
-## --peer-client-cert-auth
-## --cert-file=/opt/certs/etcd-cert.pem
-## --key-file=/opt/certs/etcd-key.pem
-## --trusted-ca-file=/opt/certs/etcd-ca.pem
-## --client-cert-auth
-
-# The kube-apiserver has one certificate template for communicating with etcd and one for the Kubernetes components,
-# and the process is configured with the appropriate flags:
-
-## --etcd-certfile=/opt/certs/etcd-cert.pem
-## --etcd-keyfile=/opt/certs/etcd-key.pem
-## --etcd-cafile=/opt/certs/etcd-ca.pem
-## --tls-cert-file=/opt/certs/apiserver-cert.pem
-## --tls-private-key-file=/opt/certs/apiserver-key.pem
-## --client-ca-file=/opt/certs/apiserver-ca.pem
+  aws ssm put-parameter \
+    --name "${CA_CERTIFICATE_SSM}" \
+    --type String \
+    --value "$(cat ${CA_CERTIFICATE_FILE})"
+fi
