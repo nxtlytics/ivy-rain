@@ -117,6 +117,7 @@ let "VALID_IN_HOURS = ${VALID_IN_YEARS} * ${HOURS_IN_YEAR}"
 CA_DIRECTORY="${SYSENV_DIRECTORY}/CA"
 CA_KEY_SSM="/${SSM_PREFIX}/CA/ca-key.pem"
 CA_CERTIFICATE_SSM="/${SSM_PREFIX}/CA/ca.pem"
+echo "I will check if ${CA_KEY_SSM} is in ssm already or not"
 if is_parameter_in_ssm "${CA_KEY_SSM}"; then
   echo 'Nothing to do here'
 else
