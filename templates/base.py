@@ -313,7 +313,7 @@ class IvyTemplate(Template):
         """
         if _filter not in [None, 'private', 'public']:
             raise RuntimeError('Filter not one of None, "public", or "private": {}'.format(_filter))
-        filter_is_public = True if _filter is 'public' else False
+        filter_is_public = True if _filter == 'public' else False
         all_subnets = self.ec2_conn.describe_subnets(
             Filters=[{'Name': 'vpc-id', 'Values': [self.vpc_id]}])['Subnets']
         if _filter:

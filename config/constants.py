@@ -81,6 +81,7 @@ ENVIRONMENTS = {
             },
             'agent': {
                 'instance_type': 'c5.4xlarge',
+                'lb_type': 'application',
                 'private_elb_cert': 'dev.nxtlytics.dev',
                 'public_elb_cert': 'dev.nxtlytics.dev',
                 'rootfs_size': 20,

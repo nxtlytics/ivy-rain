@@ -1,5 +1,6 @@
-from troposphere import (autoscaling, ec2, elasticloadbalancing, cloudwatch, sns,
-                         iam, policies, route53, Base64, GetAtt, Parameter, Ref)
+from troposphere import (autoscaling, ec2, elasticloadbalancing, elasticloadbalancingv2,
+                         cloudwatch, sns,iam, policies, route53, Base64, GetAtt, Parameter,
+                         Ref)
 
 from config import constants
 from .base import IvyTemplate
@@ -85,7 +86,141 @@ class MesosAgentsTemplate(IvyTemplate):
             ) + [ec2.Tag('Name', lb_name)]
         )
 
-    def generate_asg(self, placement, count, block_mapping, load_balancers, preferred_subnets_only=False):
+    def generate_app_load_balancer(self, lb_name, typ, port, cert_arn, log_bucket):
+
+        lb_name = self.cfn_name(lb_name)
+
+        if typ not in ['internal', 'internet-facing']:
+            raise NameError("Load balancer type must be of type internal, internet-facing")
+
+        # Use the system security groups (automatic) if internal, else use the limited external security group
+        sg = self.security_groups if typ == 'internal' else [Ref(self.elb_external_security_group)]
+
+        _alb = elasticloadbalancingv2.LoadBalancer(
+            lb_name,
+            Name=lb_name,
+            IpAddressType='ipv4',
+            LoadBalancerAttributes=[
+                elasticloadbalancingv2.LoadBalancerAttributes(
+                    Key='access_logs.s3.enabled',
+                    Value='true'
+                ),
+                elasticloadbalancingv2.LoadBalancerAttributes(
+                    Key='access_logs.s3.bucket',
+                    Value=log_bucket
+                ),
+                elasticloadbalancingv2.LoadBalancerAttributes(
+                    Key='access_logs.s3.prefix',
+                    Value="ELB/{}/{}".format(self.env, lb_name)
+                ),
+                elasticloadbalancingv2.LoadBalancerAttributes(
+                    Key='deletion_protection.enabled',
+                    Value='false'
+                ),
+                elasticloadbalancingv2.LoadBalancerAttributes(
+                    Key='idle_timeout.timeout_seconds',
+                    Value='60'
+                ),
+                elasticloadbalancingv2.LoadBalancerAttributes(
+                    Key='routing.http.drop_invalid_header_fields.enabled',
+                    Value='false'
+                ),
+                elasticloadbalancingv2.LoadBalancerAttributes(
+                    Key='routing.http2.enabled',
+                    Value='true'
+                )
+            ],
+            Scheme=typ,
+            SecurityGroups=sg,
+            Subnets=[s['SubnetId'] for s in self.get_subnets('private' if typ == 'internal' else 'public')],
+            Type='application',
+            Tags=self.get_tags(
+                service_override="InternalALB" if typ == 'internal' else "ExternalALB",
+                role_override=lb_name
+            ) + [ec2.Tag('Name', lb_name)]
+        )
+
+        _target_group = elasticloadbalancingv2.TargetGroup(
+            '{}TG'.format(lb_name),
+            Name='{}TG'.format(lb_name),
+            HealthCheckIntervalSeconds=30,
+            HealthCheckPath='/ping',
+            HealthCheckPort=port,
+            HealthCheckProtocol='HTTP',
+            HealthCheckTimeoutSeconds=5,
+            HealthyThresholdCount=5,
+            UnhealthyThresholdCount=2,
+            Matcher=elasticloadbalancingv2.Matcher(
+                HttpCode='200'
+            ),
+            Port=port,
+            Protocol='HTTP',
+            TargetGroupAttributes=[
+                elasticloadbalancingv2.TargetGroupAttribute(
+                    Key='deregistration_delay.timeout_seconds',
+                    Value='300'
+                ),
+                elasticloadbalancingv2.TargetGroupAttribute(
+                    Key='stickiness.enabled',
+                    Value='false'
+                ),
+                elasticloadbalancingv2.TargetGroupAttribute(
+                    Key='stickiness.type',
+                    Value='lb_cookie'
+                ),
+                elasticloadbalancingv2.TargetGroupAttribute(
+                    Key='load_balancing.algorithm.type',
+                    Value='least_outstanding_requests'
+                )
+            ],
+            TargetType='instance',
+            VpcId=self.vpc_id,
+            Tags=self.get_tags(
+                service_override="InternalELB" if typ == 'internal' else "ExternalELB",
+                role_override=lb_name
+            ) + [ec2.Tag('Name', '{}TG'.format(lb_name))]
+        )
+
+        _listener_80 = self.add_resource(elasticloadbalancingv2.Listener(
+            '{}80Listener'.format(lb_name),
+            Port='80',
+            Protocol='HTTP',
+            LoadBalancerArn=Ref(_alb),
+            DefaultActions=[
+                elasticloadbalancingv2.Action(
+                    Type='redirect',
+                    RedirectConfig=elasticloadbalancingv2.RedirectConfig(
+                        Host='#{host}',
+                        Path='/#{path}',
+                        Port='443',
+                        Protocol='HTTPS',
+                        Query='#{query}',
+                        StatusCode='HTTP_301'
+                    )
+                )
+            ],
+        ))
+        _listener_443 = self.add_resource(elasticloadbalancingv2.Listener(
+            '{}443Listener'.format(lb_name),
+            Port='443',
+            Protocol='HTTPS',
+            LoadBalancerArn=Ref(_alb),
+            SslPolicy='ELBSecurityPolicy-2016-08',
+            Certificates=[
+                elasticloadbalancingv2.Certificate(
+                    CertificateArn=cert_arn
+                )
+            ],
+            DefaultActions=[
+                elasticloadbalancingv2.Action(
+                    Type='forward',
+                    TargetGroupArn=Ref(_target_group)
+                )
+            ],
+        ))
+        return _alb, _target_group
+
+    def generate_asg(self, placement, count, block_mapping, load_balancers=None, target_group_arns=None, preferred_subnets_only=False):
         if placement not in ["public", "private"]:
             raise NameError("Mesos ASG must be either public or private")
 
@@ -137,7 +272,8 @@ class MesosAgentsTemplate(IvyTemplate):
                 HealthCheckType='ELB',
                 HealthCheckGracePeriod=600,
                 LaunchConfigurationName=Ref(launch_configuration),
-                LoadBalancerNames=load_balancers,
+                LoadBalancerNames=load_balancers if target_group_arns == None else [],
+                TargetGroupARNs=target_group_arns if load_balancers == None else [],
                 MinSize=count,
                 MaxSize=100,
                 VPCZoneIdentifier=[subnet['SubnetId'] for subnet in
@@ -272,40 +408,73 @@ class MesosAgentsTemplate(IvyTemplate):
         # Load Balancers
         #
 
+        lb_type = config.get('lb_type', 'classic')
         elb_log_bucket = config.get('log_bucket', '{}-{}-logs'.format(constants.TAG, self.env))
 
-        internal_elb = self.add_resource(
-            self.generate_load_balancer(
-                "{}MesosAgentInternalELB".format(self.env),
+        if lb_type == 'classic':
+            internal_elb = self.add_resource(
+                self.generate_load_balancer(
+                    "{}MesosAgentInternalELB".format(self.env),
+                    "internal",
+                    8080,
+                    constants.SSL_CERTIFICATES[config['private_elb_cert']]['Arn'],
+                    elb_log_bucket
+                )
+            )
+
+            external_elb = self.add_resource(
+                self.generate_load_balancer(
+                    "{}MesosAgentExternalELB".format(self.env),
+                    "internet-facing",
+                    80,
+                    constants.SSL_CERTIFICATES[config['public_elb_cert']]['Arn'],
+                    elb_log_bucket
+                )
+            )
+        elif lb_type == 'application':
+            internal_elb, internal_target_group = self.generate_app_load_balancer(
+                "{}MesosAgentInternalALB".format(self.env),
                 "internal",
                 8080,
                 constants.SSL_CERTIFICATES[config['private_elb_cert']]['Arn'],
                 elb_log_bucket
             )
-        )
+            self.add_resource(internal_elb)
+            self.add_resource(internal_target_group)
 
-        external_elb = self.add_resource(
-            self.generate_load_balancer(
-                "{}MesosAgentExternalELB".format(self.env),
+            external_elb, external_target_group = self.generate_app_load_balancer(
+                "{}MesosAgentExternalALB".format(self.env),
                 "internet-facing",
                 80,
                 constants.SSL_CERTIFICATES[config['public_elb_cert']]['Arn'],
                 elb_log_bucket
             )
-        )
+            self.add_resource(external_elb)
+            self.add_resource(external_target_group)
 
         # extra public load balancers (for SSL termination, ELB doesn't do SNI)
         extra_public_load_balancers = []
         for lb_config in config.get('extra_public_load_balancers', []):
-            extra_public_load_balancers.append(Ref(self.add_resource(
-                self.generate_load_balancer(
-                    "{}{}MesosAgentExternalELB".format(self.env, lb_config['name']),
+            if lb_type == 'classic':
+                extra_public_load_balancers.append(Ref(self.add_resource(
+                    self.generate_load_balancer(
+                        "{}{}MesosAgentExternalELB".format(self.env, lb_config['name']),
+                        "internet-facing",
+                        80,
+                        constants.SSL_CERTIFICATES[lb_config['cert']]['Arn'],
+                        elb_log_bucket
+                    )
+                )))
+            elif lb_type == 'application':
+                _extra_public_lb, _extra_external_tg = self.generate_app_load_balancer(
+                    "{}{}MesosAgentExternalALB".format(self.env, lb_config['name']),
                     "internet-facing",
                     80,
                     constants.SSL_CERTIFICATES[lb_config['cert']]['Arn'],
                     elb_log_bucket
                 )
-            )))
+                self.add_resource(_extra_public_lb)
+                extra_public_load_balancers.append(Ref(self.add_resource(_extra_external_tg)))
 
         #
         # Instances
@@ -335,21 +504,38 @@ class MesosAgentsTemplate(IvyTemplate):
         # Launch configurations
         preferred_only = config.get('preferred_placement', False)
 
-        # Private ASG
-        self.generate_asg("private",
-                          count=config['count'].get('private', 2),
-                          block_mapping=block_device_mapping,
-                          load_balancers=[Ref(internal_elb), Ref(external_elb)] + extra_public_load_balancers,
-                          preferred_subnets_only=preferred_only
-                          )
+        if lb_type == 'classic':
+            # Private ASG
+            self.generate_asg("private",
+                              count=config['count'].get('private', 2),
+                              block_mapping=block_device_mapping,
+                              load_balancers=[Ref(internal_elb), Ref(external_elb)] + extra_public_load_balancers,
+                              preferred_subnets_only=preferred_only
+                              )
 
-        # Public ASG
-        self.generate_asg("public",
-                          count=config['count'].get('public', 0),
-                          block_mapping=block_device_mapping,
-                          load_balancers=[Ref(internal_elb), Ref(external_elb)] + extra_public_load_balancers,
-                          preferred_subnets_only=preferred_only
-                          )
+            # Public ASG
+            self.generate_asg("public",
+                              count=config['count'].get('public', 0),
+                              block_mapping=block_device_mapping,
+                              load_balancers=[Ref(internal_elb), Ref(external_elb)] + extra_public_load_balancers,
+                              preferred_subnets_only=preferred_only
+                              )
+        elif lb_type == 'application':
+            # Private ASG
+            self.generate_asg("private",
+                              count=config['count'].get('private', 2),
+                              block_mapping=block_device_mapping,
+                              target_group_arns=[Ref(internal_target_group), Ref(external_target_group)] + extra_public_load_balancers,
+                              preferred_subnets_only=preferred_only
+                              )
+
+            # Public ASG
+            self.generate_asg("public",
+                              count=config['count'].get('public', 0),
+                              block_mapping=block_device_mapping,
+                              target_group_arns=[Ref(internal_target_group), Ref(external_target_group)] + extra_public_load_balancers,
+                              preferred_subnets_only=preferred_only
+                              )
 
         #
         # DNS Records
