@@ -176,7 +176,7 @@ class MesosAgentsTemplate(IvyTemplate):
             TargetType='instance',
             VpcId=self.vpc_id,
             Tags=self.get_tags(
-                service_override="InternalELB" if typ == 'internal' else "ExternalELB",
+                service_override="InternalALB" if typ == 'internal' else "ExternalALB",
                 role_override=lb_name
             ) + [ec2.Tag('Name', '{}TG'.format(lb_name))]
         )
