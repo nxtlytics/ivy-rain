@@ -13,7 +13,7 @@ usage () {
     echo
     echo 'Creates postgresql database, admin, read, app users'
     echo "Note: this uses 1Password's op command line."
-    echo '      Please run: `eval $(op signin <1Password account name>)`'
+    echo '      Please run: eval $(op signin <1Password account name>)'
     exit 1
 }
 
