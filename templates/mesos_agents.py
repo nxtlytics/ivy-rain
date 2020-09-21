@@ -142,7 +142,7 @@ class MesosAgentsTemplate(IvyTemplate):
 
         _target_group = elasticloadbalancingv2.TargetGroup(
             '{}TG'.format(lb_name),
-            Name='{}TG'.format(lb_name),
+            Name='{}TG'.format(lb_name)[0:31],
             HealthCheckIntervalSeconds=30,
             HealthCheckPath='/ping',
             HealthCheckPort=port,
