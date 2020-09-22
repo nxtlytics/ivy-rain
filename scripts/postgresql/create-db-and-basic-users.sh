@@ -52,7 +52,7 @@ if [[ -z ${USERNAME:-""} || -z ${PASSWORD:-""} || -z ${DATABASE_NAME:-""} || -z 
   usage
 fi
 
-if [[ "${POSTGIS}" == 'yes' ]]; then
+if [[ "${POSTGIS:-}" == 'yes' ]]; then
   POSTGIS='create extension postgis;'
 else
   POSTGIS='select current_user;'
