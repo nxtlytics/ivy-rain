@@ -90,6 +90,16 @@ class MesosAgentsTemplate(IvyTemplate):
 
         lb_name = self.cfn_name(lb_name)
 
+        if len(lb_name) >= 32:
+            alb_name = lb_name[0:31]
+        else:
+            alb_name = lb_name
+
+        if len(lb_name + 'TG') >= 32:
+            tg_name = '{}TG'.format(lb_name[0:29])
+        else:
+            tg_name = '{}TG'.format(lb_name)
+
         if typ not in ['internal', 'internet-facing']:
             raise NameError("Load balancer type must be of type internal, internet-facing")
 
@@ -97,8 +107,8 @@ class MesosAgentsTemplate(IvyTemplate):
         sg = self.security_groups if typ == 'internal' else [Ref(self.elb_external_security_group)]
 
         _alb = elasticloadbalancingv2.LoadBalancer(
-            lb_name,
-            Name=lb_name,
+            alb_name,
+            Name=alb_name,
             IpAddressType='ipv4',
             LoadBalancerAttributes=[
                 elasticloadbalancingv2.LoadBalancerAttributes(
@@ -141,8 +151,8 @@ class MesosAgentsTemplate(IvyTemplate):
         )
 
         _target_group = elasticloadbalancingv2.TargetGroup(
-            '{}TG'.format(lb_name),
-            Name='{}TG'.format(lb_name)[0:31],
+            tg_name,
+            Name=tg_name,
             HealthCheckIntervalSeconds=30,
             HealthCheckPath='/ping',
             HealthCheckPort=port,
