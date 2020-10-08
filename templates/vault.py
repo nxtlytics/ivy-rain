@@ -230,6 +230,7 @@ class VaultTemplate(IvyTemplate):
                     ('__IVY_TAG__', constants.TAG),
                     ('__ENI_IP__', master_ip),
                     ('__SERVER_ID__', zone_index),
+                    ('__CA_REGION__', _global_config.get('ca_region', self.region)),
                     ('__VAULT_SECRET__', 'VaultSecret-{}'.format(self.env)),
                     ('__HOSTS_ENTRIES__', '\n'.join(
                         ['{0} vault-master-{1}.node.{2}.{3} vault-master-{1}'.

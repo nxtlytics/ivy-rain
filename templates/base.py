@@ -144,17 +144,39 @@ class IvyTemplate(Template):
             iam.Policy(
                 PolicyName='DescribePermissions',
                 PolicyDocument={
-                    'Statement': [{
-                        'Effect': 'Allow',
-                        'Action': [
-                            'ec2:DescribeDhcpOptions',
-                            'ec2:DescribeInstances',
-                            'ec2:DescribeNetworkInterfaces',
-                            'ec2:DescribeRegions',
-                            'ec2:DescribeVpcs'
-                        ],
-                        'Resource': '*'
-                    }]
+                    'Statement': [
+                        {
+                            'Effect': 'Allow',
+                            'Action': [
+                                'ec2:DescribeDhcpOptions',
+                                'ec2:DescribeInstances',
+                                'ec2:DescribeNetworkInterfaces',
+                                'ec2:DescribeRegions',
+                                'ec2:DescribeVpcs'
+                            ],
+                            'Resource': '*'
+                        },
+                        {
+                            'Effect': 'Allow',
+                            'Action': [
+                                'ssm:DescribeParameters'
+                            ],
+                            'Resource': '*'
+                        },
+                        {
+                            'Effect': 'Allow',
+                            'Action': [
+                                'ssm:GetParameters'
+                            ],
+                            'Resource': 'arn:{}:ssm:{}:{}:parameter/{}/{}/CA/ca.pem'.format(
+                                self.get_partition(),
+                                constants.ENVIRONMENTS[self.env].get('ca_region', self.region),
+                                self.get_account_id(),
+                                constants.TAG,
+                                self.env
+                            )
+                        }
+                    ]
                 }
             )
         )
@@ -317,7 +339,7 @@ class IvyTemplate(Template):
         """
         if _filter not in [None, 'private', 'public']:
             raise RuntimeError('Filter not one of None, "public", or "private": {}'.format(_filter))
-        filter_is_public = True if _filter is 'public' else False
+        filter_is_public = True if _filter == 'public' else False
         all_subnets = self.ec2_conn.describe_subnets(
             Filters=[{'Name': 'vpc-id', 'Values': [self.vpc_id]}])['Subnets']
         if _filter:
