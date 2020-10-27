@@ -26,6 +26,7 @@ class IvyTemplate(Template):
         self.region = constants.ENVIRONMENTS[self.env]['region']
         self.sysenv = constants.ENVIRONMENTS[self.env]['sysenv']
         self.ec2_conn = boto3.client('ec2', region_name=self.region)
+        self.sts_conn = boto3.client('sts', region_name=self.region)
         self.name = self.env + template_name
         self.template_name = template_name
         self.tpl_name = template_name.lower()
@@ -143,17 +144,39 @@ class IvyTemplate(Template):
             iam.Policy(
                 PolicyName='DescribePermissions',
                 PolicyDocument={
-                    'Statement': [{
-                        'Effect': 'Allow',
-                        'Action': [
-                            'ec2:DescribeDhcpOptions',
-                            'ec2:DescribeInstances',
-                            'ec2:DescribeNetworkInterfaces',
-                            'ec2:DescribeRegions',
-                            'ec2:DescribeVpcs'
-                        ],
-                        'Resource': '*'
-                    }]
+                    'Statement': [
+                        {
+                            'Effect': 'Allow',
+                            'Action': [
+                                'ec2:DescribeDhcpOptions',
+                                'ec2:DescribeInstances',
+                                'ec2:DescribeNetworkInterfaces',
+                                'ec2:DescribeRegions',
+                                'ec2:DescribeVpcs'
+                            ],
+                            'Resource': '*'
+                        },
+                        {
+                            'Effect': 'Allow',
+                            'Action': [
+                                'ssm:DescribeParameters'
+                            ],
+                            'Resource': '*'
+                        },
+                        {
+                            'Effect': 'Allow',
+                            'Action': [
+                                'ssm:GetParameters'
+                            ],
+                            'Resource': 'arn:{}:ssm:{}:{}:parameter/{}/{}/CA/ca.pem'.format(
+                                self.get_partition(),
+                                constants.ENVIRONMENTS[self.env].get('ca_region', self.region),
+                                self.get_account_id(),
+                                constants.TAG,
+                                self.env
+                            )
+                        }
+                    ]
                 }
             )
         )
@@ -249,6 +272,9 @@ class IvyTemplate(Template):
 
     def get_partition(self):
         return self.ec2_conn.meta.partition
+
+    def get_account_id(self):
+        return self.sts_conn.get_caller_identity()['Account']
 
     def default_sg_name(self, name):
         return '{}-{}-DefaultSecurityGroup'.format(self.env, name)

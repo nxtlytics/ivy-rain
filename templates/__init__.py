@@ -1,4 +1,4 @@
-from templates import vpc, vpn, security_groups, rds, elasticache, cassandra, kafka, pritunl, nexus, mesos_masters, mesos_agents
+from templates import vpc, vpn, security_groups, rds, elasticache, cassandra, kafka, pritunl, nexus, mesos_masters, mesos_agents, vault
 
 TEMPLATES = {
     'VPC': vpc.VPCTemplate,
@@ -11,5 +11,6 @@ TEMPLATES = {
     'Pritunl': pritunl.PritunlTemplate,
     'Nexus': nexus.NexusTemplate,
     'MesosMasters': mesos_masters.MesosMastersTemplate,
-    'MesosAgents': mesos_agents.MesosAgentsTemplate
+    'MesosAgents': mesos_agents.MesosAgentsTemplate,
+    'Vault': vault.VaultTemplate
 }
