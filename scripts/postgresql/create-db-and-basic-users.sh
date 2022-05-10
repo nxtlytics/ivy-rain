@@ -104,12 +104,17 @@ cat << EOF > "${SQL_FILE}"
 CREATE DATABASE ${DATABASE_NAME};
 \c ${DATABASE_NAME}
 begin;
-create user ${DATABASE_NAME}_admin with password '${ADMIN_PASS}';
-create user ${DATABASE_NAME}_app with password '${APP_PASS}';
-create user ${DATABASE_NAME}_read with password '${READ_PASS}';
-GRANT ALL PRIVILEGES ON DATABASE ${DATABASE_NAME} to ${DATABASE_NAME}_admin;
-grant all on all tables in schema public to ${DATABASE_NAME}_app;
-grant select on all tables in schema public to ${DATABASE_NAME}_read;
+REVOKE ALL ON SCHEMA public FROM public;
+REVOKE connect ON DATABASE ${DATABASE_NAME} FROM PUBLIC;
+GRANT connect ON DATABASE ${DATABASE_NAME} TO ${USERNAME};
+CREATE USER ${DATABASE_NAME}_app WITH PASSWORD '${APP_PASS}';
+CREATE USER ${DATABASE_NAME}_read WITH PASSWORD '${READ_PASS}';
+GRANT connect ON DATABASE ${DATABASE_NAME} TO ${DATABASE_NAME}_app;
+GRANT ALL PRIVILEGES ON DATABASE ${DATABASE_NAME} TO ${DATABASE_NAME}_app;
+GRANT ALL PRIVILEGES ON SCHEMA public TO ${DATABASE_NAME}_app;
+GRANT pg_read_all_data,pg_write_all_data TO ${DATABASE_NAME}_app;
+GRANT connect ON DATABASE ${DATABASE_NAME} TO ${DATABASE_NAME}_read;
+GRANT pg_read_all_data TO ${DATABASE_NAME}_read;
 ${POSTGIS}
 commit;
 EOF
